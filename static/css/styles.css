@@ -276,6 +276,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  position: relative;
 }
 
 .project-icon {
@@ -288,6 +289,32 @@ body {
   justify-content: center;
   color: white;
   font-size: 1rem;
+}
+
+/* Status indicator dot */
+.status-indicator-dot {
+  position: absolute;
+  top: 1.5rem;
+  right: 1.5rem;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--gray-50);
+  box-shadow: var(--shadow-sm);
+  z-index: 10;
+}
+
+.status-indicator-dot.status-active {
+  background: var(--success);
+}
+
+.status-indicator-dot.status-paused {
+  background: var(--danger);
+}
+
+/* Dark theme adjustments for status dot border */
+[data-bs-theme="dark"] .status-indicator-dot {
+  border-color: var(--gray-100);
 }
 
 .project-body {

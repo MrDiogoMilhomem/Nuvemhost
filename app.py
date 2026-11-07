@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, abort, jsonify
+from flask import Flask, render_template, request, redirect, url_for, session, flash, send_from_directory, abort, jsonify, make_response
 import mysql.connector
 from bcrypt import hashpw, gensalt, checkpw
 from werkzeug.utils import secure_filename
@@ -12,7 +12,6 @@ from functools import wraps
 from uuid import uuid4
 import logging
 from logging.handlers import RotatingFileHandler
-from mail_zoho import BoasVindas
 from dotenv import load_dotenv
 from json import loads
 
@@ -159,7 +158,6 @@ def register():
             conn.commit()
             
             flash('Registration successful! Please log in.', 'success')
-            BoasVindas(username, email)
             return redirect(url_for('login'))
             
         except mysql.connector.Error as e:
@@ -226,7 +224,7 @@ def dashboard():
     try:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id, project_name, upload_date FROM projects WHERE user_id = %s ORDER BY upload_date DESC",
+            "SELECT id, project_name, upload_date, status FROM projects WHERE user_id = %s ORDER BY upload_date DESC",
             (session['user_id'],)
         )
         projects = cursor.fetchall()
@@ -383,9 +381,10 @@ def edit_project(project_id):
                     files.append(rel_path)
         
         return render_template('edit_project.html', 
-                             project_id=project_id, 
-                             project_name=project_name, 
-                             files=files)
+            project_id=project_id, 
+            project_name=project_name, 
+            files=files
+        )
         
     except mysql.connector.Error as e:
         flash('Error loading project.', 'danger')
@@ -516,6 +515,51 @@ def delete_project(project_id):
     
     return redirect(url_for('dashboard'))
 
+@app.route('/toggle_project_status/<project_id>', methods=['POST'])
+@login_required
+def toggle_project_status(project_id):
+    """Toggle project status between active and paused"""
+    print(f"toggle_project_status called: project_id={project_id}, user_id={session.get('user_id')}")
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({'error': 'Database connection error'}), 500
+    
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT status, project_name FROM projects WHERE id = %s AND user_id = %s",
+            (project_id, session['user_id'])
+        )
+        project = cursor.fetchone()
+        print(f"Project found: {project}")
+        
+        if not project:
+            return jsonify({'error': 'Project not found'}), 404
+        
+        current_status = project[0]
+        project_name = project[1]
+        new_status = 'paused' if current_status == 'active' else 'active'
+        print(f"Changing status from {current_status} to {new_status}")
+        
+        cursor.execute(
+            "UPDATE projects SET status = %s WHERE id = %s AND user_id = %s",
+            (new_status, project_id, session['user_id'])
+        )
+        conn.commit()
+        
+        action = 'paused' if new_status == 'paused' else 'reactivated'
+        return jsonify({
+            'success': True,
+            'new_status': new_status,
+            'message': f'Project "{project_name}" has been {action}.'
+        })
+        
+    except mysql.connector.Error as e:
+        print(f"Database error: {e}")
+        return jsonify({'error': 'Database error'}), 500
+    finally:
+        conn.close()
+
 @app.route('/project/<project_id>/')
 @app.route('/project/<project_id>/<path:filename>')
 def serve_project(project_id, filename='index.html'):
@@ -529,7 +573,7 @@ def serve_project(project_id, filename='index.html'):
     try:
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT p.folder_path FROM projects p 
+            """SELECT p.folder_path, p.status, p.project_name FROM projects p 
                JOIN users u ON p.user_id = u.id 
                WHERE p.folder_path LIKE %s""",
             (project_id,)
@@ -538,6 +582,10 @@ def serve_project(project_id, filename='index.html'):
         
         if not project:
             abort(404)
+        
+        # Check project status
+        if project[1] == 'paused':
+            return render_template('paused.html', project_name=project[2])
         
         project_dir = os.path.join(UPLOAD_FOLDER, project[0])
         

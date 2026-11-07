@@ -81,6 +81,9 @@
                             <div class="project-icon">
                                 <i class="bi bi-globe"></i>
                             </div>
+                            <!-- Status indicator -->
+                            <span class="status-indicator-dot {% if project[3] == 'active' %}status-active{% else %}status-paused{% endif %}" 
+                                title="{% if project[3] == 'active' %}Active{% else %}Paused{% endif %}"></span>
                             <div class="dropdown">
                                 <button class="btn btn-sm btn-outline-secondary dropdown-toggle" data-bs-toggle="dropdown">
                                     <i class="bi bi-three-dots"></i>
@@ -99,6 +102,14 @@
                                     <li>
                                         <button class="dropdown-item" onclick="copyUrl('/project/{{ project[0] }}/')">
                                             <i class="bi bi-link me-2"></i>Copy URL
+                                        </button>
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <li>
+                                        <button class="dropdown-item {% if project[3] == 'paused' %}text-success{% else %}text-warning{% endif %}" 
+                                                onclick="toggleProjectStatus('{{ project[0] }}', '{{ project[3] }}')">
+                                            <i class="bi {% if project[3] == 'paused' %}bi-play-circle{% else %}bi-pause-circle{% endif %} me-2"></i>
+                                            {% if project[3] == 'paused' %}Reactivate{% else %}Pause{% endif %}
                                         </button>
                                     </li>
                                     <li><hr class="dropdown-divider"></li>

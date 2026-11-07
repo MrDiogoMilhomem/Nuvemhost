@@ -8,6 +8,34 @@ const submitBtn = document.getElementById("submitBtn")
 const uploadProgress = document.getElementById("uploadProgress")
 const bootstrap = window.bootstrap // Declare the bootstrap variable
 
+function showAlert(message, type) {
+  // Remove existing alerts
+  const existingAlerts = document.querySelectorAll(".alert")
+  existingAlerts.forEach((alert) => alert.remove())
+
+  // Create new alert
+  const alertHTML = `
+        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
+            <i class="bi bi-${type === "success" ? "check-circle" : "exclamation-triangle"} me-2"></i>
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    `
+
+  // Insert alert at the top of the container
+  const container = document.querySelector(".upload-container")
+  container.insertAdjacentHTML("afterbegin", alertHTML)
+
+  // Auto-hide after 5 seconds
+  setTimeout(() => {
+    const alert = container.querySelector(".alert")
+    if (alert) {
+      const bsAlert = new bootstrap.Alert(alert)
+      bsAlert.close()
+    }
+  }, 5000)
+}
+
 // Drag and drop functionality
 uploadArea.addEventListener("dragover", (e) => {
   e.preventDefault()
@@ -148,34 +176,6 @@ function resetForm() {
   uploadProgress.querySelector(".progress-percentage").textContent = "0%"
 }
 
-function showAlert(message, type) {
-  // Remove existing alerts
-  const existingAlerts = document.querySelectorAll(".alert")
-  existingAlerts.forEach((alert) => alert.remove())
-
-  // Create new alert
-  const alertHTML = `
-        <div class="alert alert-${type} alert-dismissible fade show" role="alert">
-            <i class="bi bi-${type === "success" ? "check-circle" : "exclamation-triangle"} me-2"></i>
-            ${message}
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    `
-
-  // Insert alert at the top of the container
-  const container = document.querySelector(".upload-container")
-  container.insertAdjacentHTML("afterbegin", alertHTML)
-
-  // Auto-hide after 5 seconds
-  setTimeout(() => {
-    const alert = container.querySelector(".alert")
-    if (alert) {
-      const bsAlert = new bootstrap.Alert(alert)
-      bsAlert.close()
-    }
-  }, 5000)
-}
-
 // Add animation on page load
 document.addEventListener("DOMContentLoaded", () => {
   const uploadContainer = document.querySelector(".upload-container")
@@ -190,4 +190,43 @@ function confirmDelete(projectId) {
   if (confirmation) {
     window.location.href = `delete_project/${projectId}`
   }
+}
+
+// Copy URL to clipboard
+function copyUrl(url) {
+  navigator.clipboard.writeText(window.location.origin + url).then(() => {
+    showAlert('URL copied to clipboard!', 'success')
+  }).catch(() => {
+    showAlert('Failed to copy URL', 'danger')
+  })
+}
+
+// Toggle project status (pause/reactivate)
+function toggleProjectStatus(projectId, currentStatus) {
+  console.log('toggleProjectStatus called:', projectId, currentStatus)
+  const action = currentStatus === 'active' ? 'pause' : 'reactivate'
+  const confirmation = confirm(`Are you sure you want to ${action} this project?`)
+  if (!confirmation) return
+
+  console.log('Sending POST to:', `/toggle_project_status/${projectId}`)
+  
+  fetch(`/toggle_project_status/${projectId}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    }
+  })
+    .then(response => {
+      console.log('Response status:', response.status)
+      return response.json()
+    })
+    .then(data => {
+      console.log('Response data:', data)
+      location.reload()
+      showAlert(data.message, 'success')
+    })
+    .catch(error => {
+      console.error('Error:', error)
+      showAlert('An error occurred. Please try again.', 'danger')
+    })
 }

@@ -1,12 +1,6 @@
-# Arquivos de ambiente e configuração
 .env
-*.env
-
-# Logs
 *.log
-
-# Scripts shell
 *.sh
-
-# Pasta de uploads
-uploads
+uploads/
+__pycache__/
+.venv/

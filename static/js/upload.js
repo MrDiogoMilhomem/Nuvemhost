@@ -140,14 +140,6 @@ uploadForm.addEventListener("submit", (e) => {
   xhr.send(formData)
 })
 
-function resetForm() {
-  submitBtn.disabled = false
-  submitBtn.innerHTML = '<i class="bi bi-rocket-takeoff me-2"></i>Upload & Deploy'
-  uploadProgress.style.display = "none"
-  uploadProgress.querySelector(".progress-bar").style.width = "0%"
-  uploadProgress.querySelector(".progress-percentage").textContent = "0%"
-}
-
 function showAlert(message, type) {
   // Remove existing alerts
   const existingAlerts = document.querySelectorAll(".alert")
@@ -174,6 +166,14 @@ function showAlert(message, type) {
       bsAlert.close()
     }
   }, 5000)
+}
+
+function resetForm() {
+  submitBtn.disabled = false
+  submitBtn.innerHTML = '<i class="bi bi-rocket-takeoff me-2"></i>Upload & Deploy'
+  uploadProgress.style.display = "none"
+  uploadProgress.querySelector(".progress-bar").style.width = "0%"
+  uploadProgress.querySelector(".progress-percentage").textContent = "0%"
 }
 
 // Add animation on page load

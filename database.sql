@@ -20,11 +20,13 @@ CREATE TABLE IF NOT EXISTS projects (
     user_id INT NOT NULL,
     project_name VARCHAR(100) NOT NULL,
     folder_path VARCHAR(255) NOT NULL,
+    status ENUM('active', 'paused') DEFAULT 'active',
     upload_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_user_id (user_id),
-    INDEX idx_folder_path (folder_path)
+    INDEX idx_folder_path (folder_path),
+    INDEX idx_status (status)
 );
 
 -- Create indexes for better performance

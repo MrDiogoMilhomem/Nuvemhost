@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Project Paused - NuvemHost{% endblock %}
+
+{% block content %}
+<div class="container py-5">
+    <div class="row justify-content-center">
+        <div class="col-md-8 col-lg-6">
+            <div class="error-page">
+                <div class="error-icon">
+                    <i class="bi bi-pause-circle-fill"></i>
+                </div>
+                <h1 class="error-code">Paused</h1>
+                <h2 class="error-title">This project is currently paused</h2>
+                <p class="error-description">
+                    The project owner has temporarily paused this project. It will be available again once reactivated.
+                </p>
+                
+                <div class="paused-info card mt-4">
+                    <div class="card-body text-center">
+                        <p class="mb-2">
+                            <i class="bi bi-info-circle me-2 text-info"></i>
+                            <strong>Project:</strong> {{ project_name }}
+                        </p>
+                        <p class="mb-0 text-muted small">
+                            Contact the project owner if you believe this is an error.
+                        </p>
+                    </div>
+                </div>
+                
+                <div class="mt-4">
+                    <a href="{{ url_for('index') }}" class="btn btn-primary">
+                        <i class="bi bi-house me-2"></i>Back to Home
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
