@@ -15,6 +15,7 @@ Permite gerenciar uploads de projetos (ZIP), extrair arquivos e servir conteúdo
 * **Logging** - Logs rotativos do servidor
 * **Bootstrap 5** - Interface responsiva
 * **Bootstrap Icons** - Ícones
+* **boto3** - SDK AWS para armazenamento S3-compatível
 
 ---
 
@@ -29,6 +30,34 @@ Permite gerenciar uploads de projetos (ZIP), extrair arquivos e servir conteúdo
 - **Pausar/Reativar projetos**: Controle de status com indicador visual
 - **Tema Dark/Light**: Suporte a tema escuro/claro
 - **PWA**: Service Worker para funcionamento offline
+
+---
+
+## ☁️ Sistema de Armazenamento (S3 + Local Fallback)
+
+O Nuvemhost utiliza um sistema de armazenamento unificado que suporta:
+
+### **Produção: S3-Compatible Storage**
+- **AWS S3** - `https://s3.amazonaws.com`
+- **MinIO** - `http://localhost:9000` (auto-hospedado)
+- **DigitalOcean Spaces** - `https://nyc3.digitaloceanspaces.com`
+- **Vultr Object Storage** - `https://ewr1.vultrobjects.com`
+- **Cloudflare R2** - `https://<account-id>.r2.cloudflarestorage.com`
+- **Backblaze B2** - `https://s3.us-west-000.backblazeb2.com`
+- Qualquer serviço compatível com API S3
+
+### **Desenvolvimento: Local Filesystem**
+- Fallback automático quando S3 não configurado
+- Armazena em `UPLOAD_FOLDER` (padrão: `./uploads`)
+- Mesma API, zero mudança de código
+
+### **Recursos do Storage**
+- ✅ **Stream direto** - Zero uso de disco temporário em produção
+- ✅ **Bucket auto-criado** - Na primeira execução
+- ✅ **Path traversal protection** - Em S3 e local
+- ✅ **MIME type detection** - Para serving correto
+- ✅ **Presigned URLs** - Acesso temporário seguro (S3)
+- ✅ **Operações atômicas** - Upload/Delete consistentes
 
 ---
 
@@ -65,24 +94,44 @@ pip install -r requirements.txt
 
 ### 4️ Configurar variáveis de ambiente
 
-Crie um arquivo `.env` na raiz do projeto:
+Crie um arquivo `.env` na raiz do projeto (baseie-se no `.env.example`):
 
-```
+```bash
+# Flask
 DEBUG=True
 SECRET_KEY=uma_chave_muito_secreta
 
 # Banco de dados
-DB_USER=*Coloque*
-DB_PASS=*Coloque*
 DB_HOST=localhost
+DB_USER=seu_usuario
+DB_PASS=sua_senha
 DB_NAME=project_hosting
 
-# Uploads e Logs
-UPLOAD_FOLDER="/root/flaskhostingg/uploads"
+# Armazenamento Local (fallback / desenvolvimento)
+UPLOAD_FOLDER=./uploads
 ALLOWED_EXTENSIONS=["zip"]
 ALLOWED_PROJECT_FILES=["html", "css", "js", "png", "jpg", "jpeg", "gif", "svg", "ico", "txt", "md", "json"]
-LOG_FILE="flask.log"
+
+# ☁️ S3 Storage (OBRIGATÓRIO para produção)
+# Suporta: AWS S3, MinIO, DigitalOcean Spaces, Vultr, Cloudflare R2, Backblaze B2, etc.
+S3_ENDPOINT=https://s3.amazonaws.com          # Ex: http://localhost:9000 (MinIO)
+S3_ACCESS_KEY=seu_access_key
+S3_SECRET_KEY=sua_secret_key
+S3_BUCKET=seu-bucket-name
+S3_REGION=us-east-1
+S3_USE_SSL=true
+
+# Email (Zoho SMTP)
+SMTP_SERVER=smtp.zoho.com
+SMTP_PORT=587
+SMTP_USER=seu_email@dominio.com
+SMTP_PASS=sua_senha_email
+
+# Logs
+LOG_FILE=flask.log
 ```
+
+> ⚠️ **Nunca commite o arquivo `.env`** - Adicione ao `.gitignore`
 
 ### 5️ Inicializar banco de dados
 
@@ -117,12 +166,14 @@ http://127.0.0.1:5000
 ```
 Nuvemhost/
 │── app.py                      # Arquivo principal da aplicação Flask
+│── s3.py                       # Módulo de armazenamento (S3 + Local)
 │── requirements.txt            # Dependências do Python
 │── database.sql                # Schema do banco de dados
 │── migration_add_status.sql    # Migração para coluna status
 │── .env                        # Variáveis de ambiente (não versionar)
+│── .env.example                # Exemplo de configuração
 │── .gitignore                  # Arquivos ignorados pelo Git
-│── uploads/                    # Pasta de uploads (ignorada no Git)
+│── uploads/                    # Pasta de uploads local (fallback)
 │── templates/                  # Templates HTML
 │   ├── base.html               # Template base
 │   ├── index.html              # Página inicial
@@ -170,8 +221,8 @@ Nuvemhost/
 - **Tema**: Suporte a Dark/Light mode (persistido no localStorage)
 - **Cards de projeto**: Mostram nome, data, botões de ação
 - **Indicador de status**: Bolinha colorida no canto superior direito
-  - 🟢 **Verde** = Ativo
-  - 🔴 **Vermelho** = Pausado
+  - **Verde** = Ativo
+  - **Vermelho** = Pausado
 - **Dropdown de ações**: Menu acessível via três pontos
 - **Responsivo**: Funciona em mobile, tablet e desktop
 

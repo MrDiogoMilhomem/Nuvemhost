@@ -3,6 +3,7 @@ import mysql.connector
 from bcrypt import hashpw, gensalt, checkpw
 from werkzeug.utils import secure_filename
 import os
+import io
 import zipfile
 import shutil
 from datetime import datetime
@@ -14,6 +15,9 @@ import logging
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
 from json import loads
+
+# S3 Storage
+from s3 import init_storage, get_storage
 
 load_dotenv()
 
@@ -49,12 +53,28 @@ DB_CONFIG = {
 }
 
 # Upload configuration
-UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")
+UPLOAD_FOLDER = os.getenv("UPLOAD_FOLDER")  # Kept for backward compatibility
 ALLOWED_EXTENSIONS = loads(os.getenv("ALLOWED_EXTENSIONS"))
 ALLOWED_PROJECT_FILES = loads(os.getenv("ALLOWED_PROJECT_FILES"))
 
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+# S3 Storage configuration
+S3_ENDPOINT = os.getenv("S3_ENDPOINT")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY")
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY")
+S3_BUCKET = os.getenv("S3_BUCKET")
+S3_REGION = os.getenv("S3_REGION", "us-east-1")
+S3_USE_SSL = os.getenv("S3_USE_SSL", "true").lower() == "true"
+
+# Initialize storage (S3 or Local fallback)
+init_storage(
+    endpoint_url=S3_ENDPOINT,
+    access_key=S3_ACCESS_KEY,
+    secret_key=S3_SECRET_KEY,
+    bucket_name=S3_BUCKET,
+    region=S3_REGION,
+    use_ssl=S3_USE_SSL,
+    local_path=UPLOAD_FOLDER
+)
 
 def get_db_connection():
     """Get database connection"""
@@ -278,23 +298,25 @@ def upload_project():
                 flash('Only ZIP files are allowed.', 'danger')
                 return render_template('upload.html')
             
-            # Create project directory
+            # Create project ID
             project_id = str(uuid4())
-            print(project_id)
-            project_dir = os.path.join(UPLOAD_FOLDER, project_id)
-            os.makedirs(project_dir, exist_ok=True)
+            print(f"New project ID: {project_id}")
             
-            # Save and extract ZIP file
-            filename = secure_filename(file.filename)
-            zip_path = os.path.join(project_dir, filename)
-            file.save(zip_path)
-            
+            # Upload and extract to S3
             try:
-                with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                    # Extract files safely
+                storage = get_storage()
+                # Read file content
+                zip_content = file.read()
+                zip_buffer = io.BytesIO(zip_content)
+                
+                extracted_files = []
+                has_html = False
+                
+                with zipfile.ZipFile(zip_buffer, 'r') as zip_ref:
                     for member in zip_ref.namelist():
-                        if member.startswith('/') or '..' in member:
-                            continue  # Skip dangerous paths
+                        # Skip directories and dangerous paths
+                        if member.endswith('/') or member.startswith('/') or '..' in member:
+                            continue
                         
                         # Check file extension
                         if '.' in member:
@@ -302,28 +324,26 @@ def upload_project():
                             if ext not in ALLOWED_PROJECT_FILES:
                                 continue
                         
-                        zip_ref.extract(member, project_dir)
+                        # Check for HTML
+                        if member.endswith('.html'):
+                            has_html = True
+                        
+                        # Extract and upload to S3
+                        file_content = zip_ref.read(member)
+                        key = f"projects/{project_id}/{member}"
+                        storage.client.put_object(
+                            Bucket=storage.bucket_name,
+                            Key=key,
+                            Body=file_content,
+                            ContentType=mimetypes.guess_type(member)[0] or 'application/octet-stream'
+                        )
+                        extracted_files.append(member)
                 
-                # Remove ZIP file after extraction
-                os.remove(zip_path)
-                
-                # Check for index.html
-                index_path = os.path.join(project_dir, 'index.html')
-                if not os.path.exists(index_path):
-                    # Look for HTML files in subdirectories
-                    html_found = False
-                    for root, dirs, files in os.walk(project_dir):
-                        for file in files:
-                            if file.endswith('.html'):
-                                html_found = True
-                                break
-                        if html_found:
-                            break
-                    
-                    if not html_found:
-                        shutil.rmtree(project_dir)
-                        flash('No HTML files found in the project.', 'danger')
-                        return render_template('upload.html')
+                if not has_html:
+                    # Clean up uploaded files
+                    storage.delete_project(project_id)
+                    flash('No HTML files found in the project.', 'danger')
+                    return render_template('upload.html')
                 
                 # Save project to database
                 cursor.execute(
@@ -336,7 +356,11 @@ def upload_project():
                 return redirect(url_for('dashboard'))
                 
             except zipfile.BadZipFile:
-                shutil.rmtree(project_dir)
+                # Clean up on error
+                try:
+                    storage.delete_project(project_id)
+                except:
+                    pass
                 flash('Invalid ZIP file.', 'danger')
                 return render_template('upload.html')
             
@@ -370,15 +394,11 @@ def edit_project(project_id):
             return redirect(url_for('dashboard'))
         
         project_name, folder_path = project
-        project_dir = os.path.join(UPLOAD_FOLDER, folder_path)
         
-        # Get all editable files
-        files = []
-        for root, dirs, filenames in os.walk(project_dir):
-            for filename in filenames:
-                if is_safe_project_file(filename):
-                    rel_path = os.path.relpath(os.path.join(root, filename), project_dir)
-                    files.append(rel_path)
+        # Get all editable files from S3
+        storage = get_storage()
+        all_files = storage.list_files(project_id)
+        files = [f for f in all_files if is_safe_project_file(f)]
         
         return render_template('edit_project.html', 
             project_id=project_id, 
@@ -412,22 +432,14 @@ def get_file_content(project_id, file_path):
         if not project:
             return jsonify({'error': 'Project not found'}), 404
         
-        project_dir = os.path.join(UPLOAD_FOLDER, project[0])
-        full_path = os.path.join(project_dir, file_path)
+        # Get file from S3
+        storage = get_storage()
+        content = storage.get_file_text(project_id, file_path)
         
-        # Security check
-        if not os.path.abspath(full_path).startswith(os.path.abspath(project_dir)):
-            return jsonify({'error': 'Invalid file path'}), 403
-        
-        if not os.path.exists(full_path):
+        if content is None:
             return jsonify({'error': 'File not found'}), 404
         
-        try:
-            with open(full_path, 'r', encoding='utf-8') as f:
-                content = f.read()
-            return jsonify({'content': content})
-        except UnicodeDecodeError:
-            return jsonify({'error': 'File is not text-based'}), 400
+        return jsonify({'content': content})
         
     except mysql.connector.Error as e:
         return jsonify({'error': 'Database error'}), 500
@@ -453,21 +465,20 @@ def save_file_content(project_id, file_path):
         if not project:
             return jsonify({'error': 'Project not found'}), 404
         
-        project_dir = os.path.join(UPLOAD_FOLDER, project[0])
-        full_path = os.path.join(project_dir, file_path)
-        
-        # Security check
-        if not os.path.abspath(full_path).startswith(os.path.abspath(project_dir)):
-            return jsonify({'error': 'Invalid file path'}), 403
+        # Validate file extension
+        if not is_safe_project_file(file_path):
+            return jsonify({'error': 'Invalid file type'}), 400
         
         content = request.json.get('content', '')
         
-        try:
-            with open(full_path, 'w', encoding='utf-8') as f:
-                f.write(content)
+        # Save to S3
+        storage = get_storage()
+        success = storage.save_file(project_id, file_path, content)
+        
+        if success:
             return jsonify({'success': True})
-        except Exception as e:
-            return jsonify({'error': f'Failed to save file: {str(e)}'}), 500
+        else:
+            return jsonify({'error': 'Failed to save file'}), 500
         
     except mysql.connector.Error as e:
         return jsonify({'error': 'Database error'}), 500
@@ -496,10 +507,9 @@ def delete_project(project_id):
             flash('Project not found.', 'danger')
             return redirect(url_for('dashboard'))
         
-        # Delete project files
-        project_dir = os.path.join(UPLOAD_FOLDER, project[0])
-        if os.path.exists(project_dir):
-            shutil.rmtree(project_dir)
+        # Delete project files from S3
+        storage = get_storage()
+        storage.delete_project(project_id)
         
         # Delete from database
         cursor.execute("DELETE FROM projects WHERE id = %s AND user_id = %s", (project_id, session['user_id']))
@@ -587,23 +597,25 @@ def serve_project(project_id, filename='index.html'):
         if project[1] == 'paused':
             return render_template('paused.html', project_name=project[2])
         
-        project_dir = os.path.join(UPLOAD_FOLDER, project[0])
-        
-        # Security check: ensure file is within project directory
-        file_path = os.path.join(project_dir, filename)
-        if not os.path.abspath(file_path).startswith(os.path.abspath(project_dir)):
-            abort(403)
-        
-        # Check if file exists and is safe
-        if not os.path.exists(file_path):
-            abort(404)
-        
+        # Validate file extension
         if not is_safe_project_file(filename):
             abort(403)
         
-        # Serve file with appropriate MIME type
-        mimetype = mimetypes.guess_type(file_path)[0]
-        return send_from_directory(project_dir, filename, mimetype=mimetype)
+        # Get file from S3
+        storage = get_storage()
+        file_content = storage.get_file(project_id, filename)
+        
+        if file_content is None:
+            abort(404)
+        
+        # Get content type
+        mimetype = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+        
+        # Return file content
+        response = make_response(file_content)
+        response.headers['Content-Type'] = mimetype
+        response.headers['Cache-Control'] = 'public, max-age=3600'
+        return response
         
     except mysql.connector.Error as e:
         print(f"Serve project error: {e}")
