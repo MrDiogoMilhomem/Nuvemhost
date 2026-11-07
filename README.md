@@ -82,12 +82,6 @@ UPLOAD_FOLDER="/root/flaskhostingg/uploads"
 ALLOWED_EXTENSIONS=["zip"]
 ALLOWED_PROJECT_FILES=["html", "css", "js", "png", "jpg", "jpeg", "gif", "svg", "ico", "txt", "md", "json"]
 LOG_FILE="flask.log"
-
-# Email
-SMTP_SERVER="*Coloque*"
-SMTP_PORT=587
-SMTP_USER="*Coloque*"
-SMTP_PASS="*Coloque*"
 ```
 
 ### 5️ Inicializar banco de dados
@@ -123,7 +117,6 @@ http://127.0.0.1:5000
 ```
 Nuvemhost/
 │── app.py                      # Arquivo principal da aplicação Flask
-│── mail_zoho.py                # Módulo de envio de emails
 │── requirements.txt            # Dependências do Python
 │── database.sql                # Schema do banco de dados
 │── migration_add_status.sql    # Migração para coluna status
